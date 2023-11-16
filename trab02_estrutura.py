@@ -15,17 +15,51 @@ import cv2 as cv
 # Saída: norm_points (pontos normalizados)
 #        T (matriz de normalização)
 def normalize_points(points):
+    # Calculate centroid
+    cent = np.mean(points, axis=0)
+    # Calculate the average distance of the points having the centroid as origin
+    distancias = np.zeros(len(points))
     
+    for idx in range(len(points)):
+      x_dis = points[idx,0]-cent[0]
+      y_dis = points[idx,1]-cent[1]
+      distancias[idx] = np.sqrt(x_dis**2 + y_dis**2)
     
-    
-    return norm_points, T
+    cent_avr_dist = np.mean(distancias)
+    # Define the scale to have the average distance as sqrt(2)
+    factor = np.sqrt(2) / cent_avr_dist
+    # Define the normalization matrix (similar transformation)
+    T = np.array([[factor, 0, -factor*cent[0]],
+                  [0, factor, -factor*cent[1]],
+                  [0,      0,               1]])
+    # Normalize points
+    homog_coord_points_t = np.column_stack((points, np.ones(len(points)))).T
+    norm_pts = np.dot(T, homog_coord_points_t).T[:, :2]
+    return T, norm_pts
 
 # Função para montar a matriz A do sistema de equações do DLT
 # Entrada: pts1, pts2 (pontos "pts1" da primeira imagem e pontos "pts2" da segunda imagem que atendem a pts2=H.pts1)
 # Saída: A (matriz com as duas ou três linhas resultantes da relação pts2 x H.pts1 = 0)
-def compute_A(pts1, pts2):
-    
-    return A
+def DLT(pts1, pts2):
+    # Add homogeneous coordinates
+    pts1 = np.vstack((pts1.T, np.ones(pts1.shape[0])))
+    pts2 = np.vstack((pts2.T, np.ones(pts2.shape[0])))
+    # Compute matrix A
+    for i in range(pts1.shape[1]):
+        Ai = np.array([[0,0,0,*-pts2[2,i]*pts1[:,i],*pts2[1,i]*pts1[:,i]],
+                    [*pts2[2,i]*pts1[:,i],0,0,0,*-pts2[0,i]*pts1[:,i]]])
+
+        if i == 0:
+            A = Ai
+        else:
+            A = np.vstack((A, Ai))
+
+    # Perform SVD(A) = U.S.Vt to estimate the homography
+    U,S,Vt = np.linalg.svd(A)
+    # Reshape last column of V as the homography matrix
+    H_matrix = Vt[-1,:] #in this case, reshape the last line of Vt
+
+    return H_matrix.reshape((3,3))
 
 # Função do DLT Normalizado
 # Entrada: pts1, pts2 (pontos "pts1" da primeira imagem e pontos "pts2" da segunda imagem que atendem a pts2=H.pts1)
@@ -33,15 +67,19 @@ def compute_A(pts1, pts2):
 def compute_normalized_dlt(pts1, pts2):
 
     # Normaliza pontos
-
+    T1, norm1 = normalize_points(pts1)
+    T2, norm2 = normalize_points(pts2)
     # Constrói o sistema de equações empilhando a matrix A de cada par de pontos correspondentes normalizados
-
-    # Calcula o SVD da matriz A_empilhada e estima a homografia H_normalizada 
-
+    # Calcula o SVD da matriz A_empilhada e estima a homografia H_normalizada
+    """O que está comentado é feito na função DLT""" 
+    H_normalizada = DLT(norm1, norm2)
     # Denormaliza H_normalizada e obtém H
-
+    H = np.dot(np.linalg.inv(T2), np.dot(H_normalizada, T1))
 
     return H
+
+
+
 
 
 # Função do RANSAC
@@ -86,8 +124,8 @@ def RANSAC(pts1, pts2, dis_threshold, N, Ninl):
 
 
 MIN_MATCH_COUNT = 10
-img1 = cv.imread('box.jpg', 0)   # queryImage
-img2 = cv.imread('photo01a.jpg', 0)        # trainImage
+img1 = cv.imread('comicsStarWars01.jpg', 0)   # queryImage
+img2 = cv.imread('comicsStarWars02.jpg', 0)        # trainImage
 
 # Inicialização do SIFT
 sift = cv.SIFT_create()
@@ -109,18 +147,19 @@ for m, n in matches:
         good.append(m)
 
 if len(good) > MIN_MATCH_COUNT:
-    src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1, 1, 2)
-    dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1, 1, 2)
+    src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ])#.reshape(-1, 1, 2)
+    dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ])#.reshape(-1, 1, 2)
     
     #################################################
-    M = # AQUI ENTRA A SUA FUNÇÃO DE HOMOGRAFIA!!!!
+    M = compute_normalized_dlt(src_pts, dst_pts)
+    #M = # AQUI ENTRA A SUA FUNÇÃO DE HOMOGRAFIA!!!!
     #################################################
 
     img4 = cv.warpPerspective(img1, M, (img2.shape[1], img2.shape[0])) 
 
-else:
+"""else:
     print("Not enough matches are found - {}/{}".format(len(good), MIN_MATCH_COUNT))
-    matchesMask = None
+    matchesMask = None"""
 
 draw_params = dict(matchColor = (0,255,0), # draw matches in green color
                    singlePointColor = None,
