@@ -94,42 +94,53 @@ def compute_normalized_dlt(pts1, pts2):
 ########################################################################################################################
 
 """M,_,_ = RANSAC(src_pts, dst_pts, 10, 72, 4)"""
+
 def RANSAC(pts1, pts2, dis_threshold, N, Ninl):
     
     # Define outros parâmetros como número de amostras do modelo, probabilidades da equação de N, etc 
-    n_iterations = math.inf
+    n_iterations = 0
     pts1_in = None
     pts2_in = None
     e = 0.5
     p = 0.99
     max_inliners = 0
+
     # Processo Iterativo
-    while n_iterations > N:
+    while n_iterations < N:
+
         # Enquanto não atende a critério de parada
         # Sorteia aleatoriamente "s" amostras do conjunto de pares de pontos pts1 e pts2 
         idx_sorted = np.random.choice(len(pts1), Ninl, replace=False)
         sorted_pts1 = pts1[idx_sorted]
         sorted_pts2 = pts2[idx_sorted]
+
         # Usa as amostras para estimar uma homografia usando o DTL Normalizado
         estimated_H = compute_normalized_dlt(sorted_pts1, sorted_pts2)
+
         # Testa essa homografia com os demais pares de pontos usando o dis_threshold e contabiliza
         # o número de supostos inliers obtidos com o modelo estimado
         co_hom_pts1 = np.column_stack((pts1, np.ones(len(pts1))))
 
         #x' = H.x^t
         transformed_pts2 = np.dot(estimated_H, co_hom_pts1.T).T
+
         #obter a coluna 2 de transformed_pts2
         temp_col = transformed_pts2[:,2]
+
         #expandir a dimensão para dividir pelo vetor resultante
         temp_col = temp_col.reshape(-1,1)
+
         #assim, normalizamos as coordenadas homogêneas abaixo, dividindo
         #cada linha de transformed_pts2 pelo terceiro elemento da mesma linha
         transformed_pts2 /= temp_col
+
         #após a normalizaçao, a terceira coluna não se faz mais necessária,
         #então, podemos retirá-la
-        """pega todas as linha, e as colunas 0 e 1"""
+        """pega todas as linha, e as colunas 0 e 1 (x e y)"""
         transformed_pts2 = transformed_pts2[:, :2]
 
+        #Verifica se os pontos estão no threshold definido na inicialização
+        #da função
         dist = np.linalg.norm(pts2-transformed_pts2, axis=1)
 
         inliers = []
@@ -140,22 +151,33 @@ def RANSAC(pts1, pts2, dis_threshold, N, Ninl):
                 inliers.append(False)
         inliers = np.array(inliers)
 
+        # inliers é um vetor de valores booleanos, que são passados como "index", que seleciona os pontos com o valor
+        # "True" no mesmo index
         # Se o número de inliers é o maior obtido até o momento, guarda esse conjunto além das "s" amostras utilizadas. 
-        # Atualiza também o número N de iterações necessárias
+        if np.sum(inliers) > max_inliners:
+            max_inliners = np.sum(inliers)
+            pts1_in = pts1[inliers]
+            pts2_in = pts2[inliers]
+            e = calculate_e(inliers, pts1)
+            # Atualiza também o número N de iterações necessárias
+            N = calculate_N(p, e)
 
-    # Terminado o processo iterativo
-    # Estima a homografia final H usando todos os inliers selecionados.
+        n_iterations += 1
+
+    # Terminado o processo iterativo, estima a homografia final H usando
+    #todos os inliers selecionados.
     H = compute_normalized_dlt(pts1_in, pts2_in)
-
     return H, pts1_in, pts2_in
 
 def calculate_e(inliers, pts1):
-    e = 1-((len(inliers))/(len(pts1)))
+    e = 1-((np.sum(inliers))/(len(pts1)))
     return e
 
 def calculate_N(p, e):
-    val = ((np.log(1-p))//(np.log(1-((1-e)**4))))+1
-    return val
+    n = ((np.log(1-p))//(np.log(1-((1-e)**4))))+1
+    return n
+
+
 ########################################################################################################################
 # Exemplo de Teste da função de homografia usando o SIFT
 
@@ -187,7 +209,8 @@ if len(good) > MIN_MATCH_COUNT:
     dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ])#.reshape(-1, 1, 2)
     
     #################################################
-    M = compute_normalized_dlt(src_pts, dst_pts)
+    #M = compute_normalized_dlt(src_pts, dst_pts)
+    M,_,_ = RANSAC(src_pts, dst_pts, 10, 72, 4)
     #M = # AQUI ENTRA A SUA FUNÇÃO DE HOMOGRAFIA!!!!
     #################################################
 
