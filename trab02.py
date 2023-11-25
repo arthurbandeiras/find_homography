@@ -166,6 +166,8 @@ def RANSAC(pts1, pts2, dis_threshold, N, Ninl):
 
     # Terminado o processo iterativo, estima a homografia final H usando
     #todos os inliers selecionados.
+    print("número de iterações: ", n_iterations)
+    print("inliers: ", max_inliners)
     H = compute_normalized_dlt(pts1_in, pts2_in)
     return H, pts1_in, pts2_in
 
